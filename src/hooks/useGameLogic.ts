@@ -1,109 +1,108 @@
-// useGameLogic.ts
-import { useState, useCallback } from "react";
+import { useState, useCallback } from 'react';
 
+// Tipo para apostas
+type Bet = {
+    symbol: string;
+    amount: number;
+};
+interface SymbolMultipliers {
+  [key: string]: {
+    3: number;
+    4: number;
+    5: number;
+  };
+}
+// Multiplicadores para cada símbolo com base na sequência
+const symbolMultipliers: SymbolMultipliers = {
+  "🍒": { 3: 1.5, 4: 2, 5: 2.5 },
+  "🍀": { 3: 1.2, 4: 1.8, 5: 2.2 },
+  "🔔": { 3: 1.3, 4: 1.9, 5: 2.3 },
+  "💎": { 3: 1.4, 4: 2.0, 5: 2.4 },
+  // Adicione outros símbolos conforme necessário
+};
 const symbols = ["6", "7", "8", "Q", "K", "J", "🍒", "🍀", "🔔", "💎"];
-
 export const useGameLogic = () => {
-  const [betValue, setBetValue] = useState<number>(0);
-  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
-  const [isSpinEnabled, setIsSpinEnabled] = useState<boolean>(false);
-  const [board, setBoard] = useState<string[][]>(
-    Array(5).fill(Array(5).fill(""))
-  );
-  const [playerBalance, setPlayerBalance] = useState<number>(100);
+    const [playerBalance, setPlayerBalance] = useState<number>(100);
+    const [bets, setBets] = useState<Bet[]>([]);
+    const [isSpinEnabled, setIsSpinEnabled] = useState<boolean>(false);
+    const [board, setBoard] = useState<string[][]>(Array(5).fill(Array(5).fill(""))); // Tabuleiro 5x5 inicial
 
-  const onBetPlaced = useCallback((value: number, symbols: string[]) => {
-    setBetValue(value);
-    setSelectedSymbols(symbols);
-    setIsSpinEnabled(true);
-  }, []);
+    const onBetPlaced = useCallback((newBets: Bet[]) => {
+        setBets(newBets);
+        const totalBetAmount = newBets.reduce((acc, bet) => acc + bet.amount, 0);
+        setPlayerBalance((balance) => balance - totalBetAmount);
+        setIsSpinEnabled(true); // Habilita o giro da roleta
+    }, []);
 
-  const checkForWin = (board: string[][]): void => {
-    let win = false;
+    const onSpinComplete = useCallback(() => {
+        const newBoard = generateRandomBoard();
+        setBoard(newBoard);
+        const winAmount = calculateWinAmount(newBoard, bets);
+        setPlayerBalance((balance) => balance + winAmount);
+        setIsSpinEnabled(false); // Desabilita o giro após a conclusão
+    }, [bets]);
 
-    // Verifica linhas
-    for (let row = 0; row < board.length; row++) {
-      let count = 1;
-      for (let col = 1; col < board[row].length; col++) {
-        if (
-          board[row][col] === board[row][col - 1] &&
-          selectedSymbols.includes(board[row][col])
-        ) {
-          count++;
-          if (count >= 3) {
-            win = true;
-            break;
-          }
-        } else {
-          count = 1;
-        }
-      }
-      if (win) break;
-    }
+    // Gera um tabuleiro com símbolos aleatórios
+    const generateRandomBoard = (): string[][] => {
+        return Array.from({ length: 5 }, () =>
+            Array.from({ length: 5 }, () => Object.keys(symbolMultipliers)[Math.floor(Math.random() * Object.keys(symbolMultipliers).length)])
+        );
+    };
 
-    // Verifica colunas se ainda não encontrou vitória
-    if (!win) {
-      for (let col = 0; col < board[0].length; col++) {
-        let count = 1;
-        for (let row = 1; row < board.length; row++) {
-          if (
-            board[row][col] === board[row - 1][col] &&
-            selectedSymbols.includes(board[row][col])
-          ) {
-            count++;
-            if (count >= 3) {
-              win = true;
-              break;
+    // Calcula o ganho com base no tabuleiro e nas apostas
+    const calculateWinAmount = (board: string[][], bets: Bet[]): number => {
+        let winAmount = 0;
+        bets.forEach((bet) => {
+            const sequences = findSequences(board, bet.symbol);
+            sequences.forEach(seq => {
+              winAmount += bet.amount * (symbolMultipliers[bet.symbol][seq as 3 | 4 | 5] || 0);
+            });
+        });
+        return winAmount;
+    };
+
+    // Encontra sequências de um dado símbolo no tabuleiro
+    const findSequences = (board: string[][], symbol: string): number[] => {
+        let sequences = [];
+
+        // Verifica sequências horizontais e verticais
+        for (let i = 0; i < 5; i++) {
+            let horizontalCount = 0;
+            let verticalCount = 0;
+            for (let j = 0; j < 5; j++) {
+                // Horizontal
+                if (board[i][j] === symbol) {
+                    horizontalCount++;
+                } else {
+                    if (horizontalCount >= 3) sequences.push(horizontalCount);
+                    horizontalCount = 0;
+                }
+
+                // Vertical
+                if (board[j][i] === symbol) {
+                    verticalCount++;
+                } else {
+                    if (verticalCount >= 3) sequences.push(verticalCount);
+                    verticalCount = 0;
+                }
             }
-          } else {
-            count = 1;
-          }
+            // Verifica se há sequências no final da linha/coluna
+            if (horizontalCount >= 3) sequences.push(horizontalCount);
+            if (verticalCount >= 3) sequences.push(verticalCount);
         }
-        if (win) break;
-      }
-    }
 
-    if (win) {
-      console.log("Vitória! Sequência encontrada.");
-      // Calcula o ganho. Exemplo: valor da aposta * número de símbolos * um multiplicador
-      const winAmount = betValue * selectedSymbols.length * 2; // Supondo um multiplicador de 2 para o exemplo
-      setPlayerBalance(playerBalance + winAmount); // Atualiza o saldo do jogador
-    } else {
-      console.log("Nenhuma sequência vencedora.");
-      // Lógica para perda da aposta
-      // Subtrai o valor apostado (dividido pelo número de símbolos escolhidos) do saldo do jogador
-      setPlayerBalance(playerBalance - betValue);
-    }
-  };
+        // Adicione lógica para diagonais se necessário
 
-  const onSpin = useCallback(() => {
-    // Simula o preenchimento do tabuleiro com símbolos aleatórios após o giro
-    const newBoard = Array.from({ length: 5 }, () =>
-      Array.from(
-        { length: 5 },
-        () => symbols[Math.floor(Math.random() * symbols.length)]
-      )
-    );
-    setBoard(newBoard);
-    setIsSpinEnabled(false);
-    // Aqui você pode invocar a lógica de verificação de sequências vencedoras
-    checkForWin(newBoard);
-  }, [symbols]);
+        return sequences;
+    };
 
-  // Função para verificar sequências vencedoras será adicionada aqui
-
-  return {
-    symbols,
-    betValue,
-    selectedSymbols,
-    isSpinEnabled,
-    playerBalance, // Adiciona o saldo do jogador
-    board,
-    onBetPlaced,
-    onSpin,
-    setBetValue,
-    setSelectedSymbols,
-    setIsSpinEnabled,
-    setBoard,
-  };
+    return {
+        playerBalance,
+        bets,
+        isSpinEnabled,
+        board,
+        onBetPlaced,
+        onSpinComplete,
+        symbols
+    };
 };
